@@ -58,7 +58,12 @@ def train(args, train_loader_syn, train_loader_ugc, \
         dist_label = dist_label.repeat(1, args.num_patches).view(-1, dist_label.shape[1])
         dist_label = dist_label.cuda(non_blocking=True)
         
-        with torch.cuda.amp.autocast(enabled=True):
+        autocast_ctx = (
+            torch.amp.autocast(device_type="cuda", enabled=True)
+            if hasattr(torch, "amp") and hasattr(torch.amp, "autocast")
+            else torch.cuda.amp.autocast(enabled=True)
+        )
+        with autocast_ctx:
             z_i1, z_i2, z_i1_patch, z_i2_patch, h_i1, h_i2, h_i1_patch, h_i2_patch\
             = model(x_i1, x_i2)
             loss = criterion(z_i1_patch, z_i2_patch, dist_label)
@@ -152,7 +157,11 @@ def main(gpu, args):
         model_fp = os.path.join(
             args.model_path, "checkpoint_{}.tar".format(args.epoch_num)
         )
-        model.load_state_dict(torch.load(model_fp, map_location=args.device.type))
+        try:
+            state_dict = torch.load(model_fp, map_location=args.device, weights_only=False)
+        except TypeError:
+            state_dict = torch.load(model_fp, map_location=args.device)
+        model.load_state_dict(state_dict)
     model = model.to(args.device)
     
     #sgd optmizer
@@ -177,7 +186,11 @@ def main(gpu, args):
 
     model = model.to(args.device)
     
-    scaler = torch.cuda.amp.GradScaler(enabled=True)
+    scaler = (
+        torch.amp.GradScaler(device="cuda", enabled=True)
+        if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler")
+        else torch.cuda.amp.GradScaler(enabled=True)
+    )
     
 #    writer = None
     if args.nr == 0:
